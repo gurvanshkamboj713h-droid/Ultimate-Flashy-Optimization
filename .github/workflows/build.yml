@@ -47,7 +47,7 @@ jobs:
           org.gradle.jvmargs=-Xmx3G
           minecraft_version=1.21.11
           loader_version=0.18.4
-          loom_version=1.13.1
+          loom_version=1.13.6
           mod_version=0.1.0
           maven_group=com.ultimateflashy
           archives_base_name=ultimate-flashy-vpn
@@ -55,7 +55,7 @@ jobs:
 
           cat > build.gradle <<'EOF'
           plugins {
-              id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+              id 'fabric-loom' version "${loom_version}"
           }
 
           version = project.mod_version
