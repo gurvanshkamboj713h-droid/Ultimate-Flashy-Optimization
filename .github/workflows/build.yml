@@ -499,5 +499,44 @@ jobs:
               public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
                   graphics.fill(0, 0, this.width, this.height, 0xFF171326);
                   graphics.fill(0, 0, this.width, 30, 0xFF29203D);
+                  
+                  graphics.drawCenteredString(this.font,
+                      "✦ ULTIMATE FLASHY VPN ✦", this.width / 2, 10, 0xFFE6D8FF);
 
-     
+                  graphics.drawString(this.font, "Proxy host", this.width / 2 - 100,
+                      65, 0xFFD7C8F5);
+                  graphics.drawString(this.font, "Port", this.width / 2 - 100,
+                      101, 0xFFD7C8F5);
+                  graphics.drawString(this.font, "Username", this.width / 2 - 100,
+                      137, 0xFFD7C8F5);
+                  graphics.drawString(this.font, "Password", this.width / 2 - 100,
+                      173, 0xFFD7C8F5);
+
+                  graphics.drawCenteredString(this.font, status,
+                      this.width / 2, 249, 0xFFE6D8FF);
+
+                  if (!latency.isEmpty()) {
+                      graphics.drawCenteredString(this.font, "Latency: " + latency,
+                          this.width / 2, 260, 0xFFB9F6CA);
+                  }
+
+                  super.render(graphics, mouseX, mouseY, delta);
+              }
+
+              private static class Profile {
+                  String type, host, port, username, password;
+              }
+          }
+          EOF
+
+      - name: Build mod
+        run: gradle build
+
+      - name: Upload mod JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ultimate-Flashy-VPN-v0.3.0
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 14
+          
