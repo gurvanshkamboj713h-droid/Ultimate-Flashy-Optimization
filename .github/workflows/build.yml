@@ -31,7 +31,6 @@ jobs:
       - name: Generate project
         shell: bash
         run: |
-          mkdir -p src/main/java/com/ultimateflashy/vpn
           mkdir -p src/main/java/com/ultimateflashy/vpn/mixin
           mkdir -p src/main/resources
 
@@ -50,7 +49,6 @@ jobs:
           org.gradle.jvmargs=-Xmx2G
           org.gradle.parallel=true
           minecraft_version=1.21.11
-          yarn_mappings=1.21.11+build.1
           loader_version=0.18.4
           fabric_version=0.141.6+1.21.11
           mod_version=0.3.0
@@ -77,7 +75,7 @@ jobs:
 
           dependencies {
               minecraft "com.mojang:minecraft:${project.minecraft_version}"
-              mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+              mappings loom.officialMojangMappings()
               modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
               modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
           }
@@ -100,7 +98,7 @@ jobs:
             "id": "ultimate_flashy_vpn",
             "version": "${version}",
             "name": "Ultimate Flashy VPN",
-            "description": "A Minecraft proxy configuration and connection tester.",
+            "description": "Minecraft proxy settings and connection tester.",
             "environment": "client",
             "entrypoints": {
               "client": [
@@ -171,29 +169,35 @@ jobs:
           import com.ultimateflashy.vpn.VPNSettingsScreen;
           import net.minecraft.client.Minecraft;
           import net.minecraft.client.gui.components.Button;
-          import net.minecraft.client.gui.screens.Screen;
           import net.minecraft.client.gui.screens.PauseScreen;
+          import net.minecraft.client.gui.screens.Screen;
           import net.minecraft.network.chat.Component;
           import org.spongepowered.asm.mixin.Mixin;
+          import org.spongepowered.asm.mixin.Shadow;
           import org.spongepowered.asm.mixin.injection.At;
           import org.spongepowered.asm.mixin.injection.Inject;
           import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
           @Mixin(PauseScreen.class)
-          public abstract class GameMenuScreenMixin extends Screen {
-              protected GameMenuScreenMixin(Component title) {
-                  super(title);
-              }
+          public abstract class GameMenuScreenMixin {
+              @Shadow
+              protected abstract <T extends net.minecraft.client.gui.components.events.GuiEventListener
+                  & net.minecraft.client.gui.components.Renderable
+                  & net.minecraft.client.gui.narration.NarratableEntry>
+                  T addRenderableWidget(T widget);
 
               @Inject(method = "init", at = @At("TAIL"))
               private void ultimateFlashy$addButton(CallbackInfo ci) {
                   Screen parent = (Screen)(Object)this;
+
                   Button button = Button.builder(
                       Component.literal("✦ VPN Settings"),
-                      b -> Minecraft.getInstance().setScreen(new VPNSettingsScreen(parent))
-                  ).bounds(this.width / 2 - 100, this.height / 4 + 120, 200, 20).build();
+                      b -> Minecraft.getInstance().setScreen(
+                          new VPNSettingsScreen(parent))
+                  ).bounds(parent.width / 2 - 100,
+                      parent.height / 4 + 120, 200, 20).build();
 
-                  ((ScreenAccessor)parent).ultimateFlashy$addWidget(button);
+                  this.addRenderableWidget(button);
               }
           }
           EOF
@@ -212,6 +216,7 @@ jobs:
               public static Result test(String type, String host, int port,
                                         String username, String password) {
                   long start = System.currentTimeMillis();
+
                   try (Socket socket = new Socket()) {
                       socket.connect(new InetSocketAddress(host, port), 7000);
                       socket.setSoTimeout(7000);
@@ -222,11 +227,12 @@ jobs:
                           testHttp(socket, username, password);
                       }
 
-                      long elapsed = System.currentTimeMillis() - start;
-                      return new Result(true, "Proxy CONNECT successful", elapsed);
+                      return new Result(true, "Proxy CONNECT successful",
+                          System.currentTimeMillis() - start);
+
                   } catch (Exception e) {
                       return new Result(false, "Failed: " + e.getMessage(),
-                              System.currentTimeMillis() - start);
+                          System.currentTimeMillis() - start);
                   }
               }
 
@@ -236,27 +242,35 @@ jobs:
                   OutputStream out = socket.getOutputStream();
 
                   boolean auth = user != null && !user.isBlank();
-                  out.write(auth ? new byte[]{5, 2, 0, 2} : new byte[]{5, 1, 0});
+
+                  out.write(auth
+                      ? new byte[]{5, 2, 0, 2}
+                      : new byte[]{5, 1, 0});
                   out.flush();
 
                   int version = in.read();
                   int method = in.read();
+
                   if (version != 5 || method == 255 || method == -1) {
                       throw new IOException("SOCKS5 negotiation rejected");
                   }
 
                   if (method == 2) {
                       byte[] u = user.getBytes(StandardCharsets.UTF_8);
-                      byte[] p = pass.getBytes(StandardCharsets.UTF_8);
+                      byte[] p = (pass == null ? "" : pass)
+                          .getBytes(StandardCharsets.UTF_8);
+
                       if (u.length > 255 || p.length > 255) {
                           throw new IOException("Credentials too long");
                       }
+
                       out.write(1);
                       out.write(u.length);
                       out.write(u);
                       out.write(p.length);
                       out.write(p);
                       out.flush();
+
                       if (in.read() != 1 || in.read() != 0) {
                           throw new IOException("SOCKS5 login failed");
                       }
@@ -271,11 +285,13 @@ jobs:
 
                   byte[] reply = new byte[4];
                   readFully(in, reply);
+
                   if (reply[0] != 5 || reply[1] != 0) {
-                      throw new IOException("SOCKS5 CONNECT rejected (code " + reply[1] + ")");
+                      throw new IOException("SOCKS5 CONNECT rejected");
                   }
 
                   int addressType = reply[3] & 255;
+
                   if (addressType == 1) {
                       skipFully(in, 4);
                   } else if (addressType == 3) {
@@ -287,6 +303,7 @@ jobs:
                   } else {
                       throw new IOException("Invalid SOCKS5 address");
                   }
+
                   skipFully(in, 2);
               }
 
@@ -295,34 +312,46 @@ jobs:
                   OutputStream out = socket.getOutputStream();
                   InputStream in = socket.getInputStream();
 
-                  String request = "CONNECT example.com:443 HTTP/1.1\r\n"
+                  String request =
+                      "CONNECT example.com:443 HTTP/1.1\r\n"
                       + "Host: example.com:443\r\n";
 
                   if (user != null && !user.isBlank()) {
                       String raw = user + ":" + (pass == null ? "" : pass);
+
                       String encoded = Base64.getEncoder().encodeToString(
                           raw.getBytes(StandardCharsets.UTF_8));
-                      request += "Proxy-Authorization: Basic " + encoded + "\r\n";
+
+                      request += "Proxy-Authorization: Basic "
+                          + encoded + "\r\n";
                   }
 
-                  out.write((request + "\r\n").getBytes(StandardCharsets.US_ASCII));
+                  out.write((request + "\r\n")
+                      .getBytes(StandardCharsets.US_ASCII));
                   out.flush();
 
                   ByteArrayOutputStream line = new ByteArrayOutputStream();
                   int b;
+
                   while ((b = in.read()) != -1) {
                       if (b == '\n') break;
                       if (b != '\r') line.write(b);
-                      if (line.size() > 2048) throw new IOException("HTTP response too long");
+                      if (line.size() > 2048) {
+                          throw new IOException("HTTP response too long");
+                      }
                   }
+
                   String status = line.toString(StandardCharsets.US_ASCII);
+
                   if (!status.matches("HTTP/\\d(?:\\.\\d)? 200(?: .*|$)")) {
                       throw new IOException("HTTP CONNECT rejected: " + status);
                   }
               }
 
-              private static void readFully(InputStream in, byte[] data) throws IOException {
+              private static void readFully(InputStream in, byte[] data)
+                      throws IOException {
                   int offset = 0;
+
                   while (offset < data.length) {
                       int count = in.read(data, offset, data.length - offset);
                       if (count < 0) throw new EOFException();
@@ -330,13 +359,16 @@ jobs:
                   }
               }
 
-              private static void skipFully(InputStream in, int count) throws IOException {
+              private static void skipFully(InputStream in, int count)
+                      throws IOException {
                   while (count > 0) {
                       long skipped = in.skip(count);
+
                       if (skipped <= 0) {
                           if (in.read() < 0) throw new EOFException();
                           skipped = 1;
                       }
+
                       count -= (int) skipped;
                   }
               }
@@ -359,7 +391,9 @@ jobs:
           import java.nio.file.Path;
 
           public class VPNSettingsScreen extends Screen {
-              private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+              private static final Gson GSON =
+                  new GsonBuilder().setPrettyPrinting().create();
+
               private final Screen parent;
               private String proxyType = "SOCKS5";
               private EditBox hostField, portField, userField, passwordField;
@@ -377,19 +411,19 @@ jobs:
                   int left = cx - 100;
 
                   hostField = new EditBox(this.font, left, 76, 200, 20,
-                          Component.literal("Proxy host"));
+                      Component.literal("Proxy host"));
                   hostField.setHint(Component.literal("proxy.example.com"));
 
                   portField = new EditBox(this.font, left, 112, 200, 20,
-                          Component.literal("Port"));
+                      Component.literal("Port"));
                   portField.setValue("1080");
 
                   userField = new EditBox(this.font, left, 148, 200, 20,
-                          Component.literal("Username"));
+                      Component.literal("Username"));
                   userField.setHint(Component.literal("Optional username"));
 
                   passwordField = new EditBox(this.font, left, 184, 200, 20,
-                          Component.literal("Password"));
+                      Component.literal("Password"));
                   passwordField.setHint(Component.literal("Optional password"));
 
                   addRenderableWidget(hostField);
@@ -400,7 +434,8 @@ jobs:
                   addRenderableWidget(Button.builder(
                       Component.literal("Protocol: " + proxyType),
                       b -> {
-                          proxyType = proxyType.equals("SOCKS5") ? "HTTP CONNECT" : "SOCKS5";
+                          proxyType = proxyType.equals("SOCKS5")
+                              ? "HTTP CONNECT" : "SOCKS5";
                           b.setMessage(Component.literal("Protocol: " + proxyType));
                       }
                   ).bounds(left, 42, 200, 20).build());
@@ -425,21 +460,25 @@ jobs:
 
               private Path configPath() {
                   return Minecraft.getInstance().gameDirectory.toPath()
-                      .resolve("config").resolve("ultimate-flashy-vpn.json");
+                      .resolve("config")
+                      .resolve("ultimate-flashy-vpn.json");
               }
 
               private void saveProfile() {
                   try {
                       Path path = configPath();
                       Files.createDirectories(path.getParent());
-                      Profile profile = new Profile();
-                      profile.type = proxyType;
-                      profile.host = hostField.getValue();
-                      profile.port = portField.getValue();
-                      profile.username = userField.getValue();
-                      profile.password = passwordField.getValue();
-                      Files.writeString(path, GSON.toJson(profile));
+
+                      Profile p = new Profile();
+                      p.type = proxyType;
+                      p.host = hostField.getValue();
+                      p.port = portField.getValue();
+                      p.username = userField.getValue();
+                      p.password = passwordField.getValue();
+
+                      Files.writeString(path, GSON.toJson(p));
                       status = "Profile saved";
+
                   } catch (Exception e) {
                       status = "Save failed: " + e.getMessage();
                   }
@@ -449,16 +488,18 @@ jobs:
                   try {
                       Path path = configPath();
                       if (!Files.exists(path)) return;
-                      Profile p = GSON.fromJson(Files.readString(path), Profile.class);
+
+                      Profile p = GSON.fromJson(
+                          Files.readString(path), Profile.class);
+
                       if (p == null) return;
-                      if (p.type != null) {
-                          proxyType = p.type;
-                          // Update the protocol button on the next screen opening.
-                      }
+
+                      if (p.type != null) proxyType = p.type;
                       if (p.host != null) hostField.setValue(p.host);
                       if (p.port != null) portField.setValue(p.port);
                       if (p.username != null) userField.setValue(p.username);
                       if (p.password != null) passwordField.setValue(p.password);
+
                   } catch (Exception e) {
                       status = "Could not load saved profile";
                   }
@@ -476,67 +517,25 @@ jobs:
                   }
 
                   final int port;
+
                   try {
                       port = Integer.parseInt(portText);
-                      if (port < 1 || port > 65535) throw new NumberFormatException();
+                      if (port < 1 || port > 65535) {
+                          throw new NumberFormatException();
+                      }
                   } catch (NumberFormatException e) {
-                      status = "Enter a valid port (1–65535)";
+                      status = "Enter a valid port";
                       return;
                   }
 
                   status = "Testing proxy...";
+
                   new Thread(() -> {
                       ProxyTester.Result result = ProxyTester.test(
                           proxyType, host, port, user, pass);
+
                       Minecraft.getInstance().execute(() -> {
                           status = result.message();
-                          latency = result.success() ? result.millis() + " ms" : "";
-                      });
-                  }, "UltimateFlashy-ProxyTest").start();
-              }
-
-              @Override
-              public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-                  graphics.fill(0, 0, this.width, this.height, 0xFF171326);
-                  graphics.fill(0, 0, this.width, 30, 0xFF29203D);
-                  
-                  graphics.drawCenteredString(this.font,
-                      "✦ ULTIMATE FLASHY VPN ✦", this.width / 2, 10, 0xFFE6D8FF);
-
-                  graphics.drawString(this.font, "Proxy host", this.width / 2 - 100,
-                      65, 0xFFD7C8F5);
-                  graphics.drawString(this.font, "Port", this.width / 2 - 100,
-                      101, 0xFFD7C8F5);
-                  graphics.drawString(this.font, "Username", this.width / 2 - 100,
-                      137, 0xFFD7C8F5);
-                  graphics.drawString(this.font, "Password", this.width / 2 - 100,
-                      173, 0xFFD7C8F5);
-
-                  graphics.drawCenteredString(this.font, status,
-                      this.width / 2, 249, 0xFFE6D8FF);
-
-                  if (!latency.isEmpty()) {
-                      graphics.drawCenteredString(this.font, "Latency: " + latency,
-                          this.width / 2, 260, 0xFFB9F6CA);
-                  }
-
-                  super.render(graphics, mouseX, mouseY, delta);
-              }
-
-              private static class Profile {
-                  String type, host, port, username, password;
-              }
-          }
-          EOF
-
-      - name: Build mod
-        run: gradle build
-
-      - name: Upload mod JAR
-        uses: actions/upload-artifact@v4
-        with:
-          name: Ultimate-Flashy-VPN-v0.3.0
-          path: build/libs/*.jar
-          if-no-files-found: error
-          retention-days: 14
-          
+                          latency = result.success()
+                              ? result.millis() + " ms" : "";
+             
