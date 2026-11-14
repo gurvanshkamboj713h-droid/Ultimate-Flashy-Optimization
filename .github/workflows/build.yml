@@ -29,7 +29,7 @@ jobs:
       - name: Generate Fabric project
         shell: bash
         run: |
-          mkdir -p src/main/java/com/ultimateflashy/vpn
+          mkdir -p src/main/java/com/ultimateflashy/vpn/gui
           mkdir -p src/main/resources
 
           cat > settings.gradle <<'EOF'
@@ -48,7 +48,8 @@ jobs:
           minecraft_version=1.21.11
           loader_version=0.18.4
           loom_version=1.13.6
-          mod_version=0.1.0
+          fabric_api_version=0.141.6+1.21.11
+          mod_version=0.2.0
           maven_group=com.ultimateflashy
           archives_base_name=ultimate-flashy-vpn
           EOF
@@ -69,6 +70,7 @@ jobs:
               minecraft "com.mojang:minecraft:${project.minecraft_version}"
               mappings loom.officialMojangMappings()
               modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+              modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
           }
 
           processResources {
@@ -104,6 +106,7 @@ jobs:
             },
             "depends": {
               "fabricloader": ">=0.18.0",
+              "fabric-api": "*",
               "minecraft": "1.21.11",
               "java": ">=21"
             }
@@ -114,16 +117,119 @@ jobs:
           package com.ultimateflashy.vpn;
 
           import net.fabricmc.api.ClientModInitializer;
-          import org.slf4j.Logger;
-          import org.slf4j.LoggerFactory;
+          import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+          import net.minecraft.client.gui.components.Button;
+          import net.minecraft.client.gui.screens.PauseScreen;
+          import net.minecraft.network.chat.Component;
+          import com.ultimateflashy.vpn.gui.VPNSettingsScreen;
 
           public final class UltimateFlashyVPN implements ClientModInitializer {
-              public static final Logger LOGGER =
-                  LoggerFactory.getLogger("ultimate_flashy_vpn");
-
               @Override
               public void onInitializeClient() {
-                  LOGGER.info("Ultimate Flashy VPN initialized!");
+                  ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+                      if (screen instanceof PauseScreen) {
+                          screen.addRenderableWidget(
+                              Button.builder(
+                                  Component.literal("✦ VPN Settings"),
+                                  button -> client.setScreen(
+                                      new VPNSettingsScreen(screen)
+                                  )
+                              )
+                              .bounds(width / 2 - 100, height / 4 + 120, 200, 20)
+                              .build()
+                          );
+                      }
+                  });
+              }
+          }
+          EOF
+
+          cat > src/main/java/com/ultimateflashy/vpn/gui/VPNSettingsScreen.java <<'EOF'
+          package com.ultimateflashy.vpn.gui;
+
+          import net.minecraft.client.gui.GuiGraphics;
+          import net.minecraft.client.gui.components.Button;
+          import net.minecraft.client.gui.screens.Screen;
+          import net.minecraft.network.chat.Component;
+
+          public class VPNSettingsScreen extends Screen {
+              private final Screen parent;
+
+              public VPNSettingsScreen(Screen parent) {
+                  super(Component.literal("Ultimate Flashy VPN"));
+                  this.parent = parent;
+              }
+
+              @Override
+              protected void init() {
+                  int centerX = this.width / 2;
+                  int centerY = this.height / 2;
+
+                  this.addRenderableWidget(
+                      Button.builder(Component.literal("Back"), button -> onClose())
+                          .bounds(centerX - 100, centerY + 65, 200, 20)
+                          .build()
+                  );
+              }
+
+              @Override
+              public void render(
+                  GuiGraphics graphics,
+                  int mouseX,
+                  int mouseY,
+                  float partialTick
+              ) {
+                  this.renderBackground(graphics, mouseX, mouseY, partialTick);
+
+                  int centerX = this.width / 2;
+                  int centerY = this.height / 2;
+
+                  graphics.fill(
+                      centerX - 145, centerY - 95,
+                      centerX + 145, centerY + 95,
+                      0xEE211735
+                  );
+
+                  graphics.fill(
+                      centerX - 145, centerY - 95,
+                      centerX + 145, centerY - 92,
+                      0xFFB58AFF
+                  );
+
+                  graphics.drawCenteredString(
+                      this.font,
+                      "✦ ULTIMATE FLASHY VPN ✦",
+                      centerX, centerY - 65,
+                      0xFFE2C8FF
+                  );
+
+                  graphics.drawCenteredString(
+                      this.font,
+                      "Your cozy connection hub",
+                      centerX, centerY - 40,
+                      0xFFD4C4E8
+                  );
+
+                  graphics.drawCenteredString(
+                      this.font,
+                      "Proxy features are coming soon!",
+                      centerX, centerY,
+                      0xFFFFFFFF
+                  );
+
+                  graphics.drawCenteredString(
+                      this.font,
+                      "Version 0.2.0 - GUI Preview",
+                      centerX, centerY + 25,
+                      0xFFBFA8D9
+                  );
+
+                  super.render(graphics, mouseX, mouseY, partialTick);
+              }
+
+              @Override
+              public void onClose() {
+                  this.minecraft.setScreen(this.parent);
               }
           }
           EOF
@@ -134,7 +240,7 @@ jobs:
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Ultimate-Flashy-VPN
+          name: Ultimate-Flashy-VPN-v0.2.0
           path: build/libs/*.jar
           if-no-files-found: error
           
