@@ -30,6 +30,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p src/main/java/com/ultimateflashy/vpn/gui
+          mkdir -p src/main/java/com/ultimateflashy/vpn/mixin
           mkdir -p src/main/resources
 
           cat > settings.gradle <<'EOF'
@@ -104,6 +105,9 @@ jobs:
                 "com.ultimateflashy.vpn.UltimateFlashyVPN"
               ]
             },
+            "mixins": [
+              "ultimate_flashy_vpn.mixins.json"
+            ],
             "depends": {
               "fabricloader": ">=0.18.0",
               "fabric-api": "*",
@@ -113,31 +117,62 @@ jobs:
           }
           EOF
 
+          cat > src/main/resources/ultimate_flashy_vpn.mixins.json <<'EOF'
+          {
+            "required": true,
+            "package": "com.ultimateflashy.vpn.mixin",
+            "compatibilityLevel": "JAVA_21",
+            "client": [
+              "ScreenAccessor"
+            ],
+            "injectors": {
+              "defaultRequire": 1
+            }
+          }
+          EOF
+
+          cat > src/main/java/com/ultimateflashy/vpn/mixin/ScreenAccessor.java <<'EOF'
+          package com.ultimateflashy.vpn.mixin;
+
+          import net.minecraft.client.gui.components.Renderable;
+          import net.minecraft.client.gui.components.events.GuiEventListener;
+          import net.minecraft.client.gui.narration.NarratableEntry;
+          import net.minecraft.client.gui.screens.Screen;
+          import org.spongepowered.asm.mixin.Mixin;
+          import org.spongepowered.asm.mixin.gen.Invoker;
+
+          @Mixin(Screen.class)
+          public interface ScreenAccessor {
+              @Invoker("addRenderableWidget")
+              <T extends GuiEventListener & Renderable & NarratableEntry>
+              T ultimateFlashy$addWidget(T widget);
+          }
+          EOF
+
           cat > src/main/java/com/ultimateflashy/vpn/UltimateFlashyVPN.java <<'EOF'
           package com.ultimateflashy.vpn;
 
+          import com.ultimateflashy.vpn.gui.VPNSettingsScreen;
+          import com.ultimateflashy.vpn.mixin.ScreenAccessor;
           import net.fabricmc.api.ClientModInitializer;
           import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
           import net.minecraft.client.gui.components.Button;
           import net.minecraft.client.gui.screens.PauseScreen;
           import net.minecraft.network.chat.Component;
-          import com.ultimateflashy.vpn.gui.VPNSettingsScreen;
 
           public final class UltimateFlashyVPN implements ClientModInitializer {
               @Override
               public void onInitializeClient() {
                   ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
                       if (screen instanceof PauseScreen) {
-                          screen.addRenderableWidget(
-                              Button.builder(
-                                  Component.literal("✦ VPN Settings"),
-                                  button -> client.setScreen(
-                                      new VPNSettingsScreen(screen)
-                                  )
-                              )
-                              .bounds(width / 2 - 100, height / 4 + 120, 200, 20)
-                              .build()
-                          );
+                          Button button = Button.builder(
+                              Component.literal("✦ VPN Settings"),
+                              b -> client.setScreen(new VPNSettingsScreen(screen))
+                          )
+                          .bounds(width / 2 - 100, height / 4 + 120, 200, 20)
+                          .build();
+
+                          ((ScreenAccessor) screen).ultimateFlashy$addWidget(button);
                       }
                   });
               }
@@ -166,9 +201,12 @@ jobs:
                   int centerY = this.height / 2;
 
                   this.addRenderableWidget(
-                      Button.builder(Component.literal("Back"), button -> onClose())
-                          .bounds(centerX - 100, centerY + 65, 200, 20)
-                          .build()
+                      Button.builder(
+                          Component.literal("Back"),
+                          button -> onClose()
+                      )
+                      .bounds(centerX - 100, centerY + 65, 200, 20)
+                      .build()
                   );
               }
 
@@ -181,47 +219,41 @@ jobs:
               ) {
                   this.renderBackground(graphics, mouseX, mouseY, partialTick);
 
-                  int centerX = this.width / 2;
-                  int centerY = this.height / 2;
+                  int x = this.width / 2;
+                  int y = this.height / 2;
 
                   graphics.fill(
-                      centerX - 145, centerY - 95,
-                      centerX + 145, centerY + 95,
+                      x - 145, y - 95, x + 145, y + 95,
                       0xEE211735
                   );
 
                   graphics.fill(
-                      centerX - 145, centerY - 95,
-                      centerX + 145, centerY - 92,
+                      x - 145, y - 95, x + 145, y - 92,
                       0xFFB58AFF
                   );
 
                   graphics.drawCenteredString(
                       this.font,
-                      "✦ ULTIMATE FLASHY VPN ✦",
-                      centerX, centerY - 65,
-                      0xFFE2C8FF
+                      "ULTIMATE FLASHY VPN",
+                      x, y - 65, 0xFFE2C8FF
                   );
 
                   graphics.drawCenteredString(
                       this.font,
                       "Your cozy connection hub",
-                      centerX, centerY - 40,
-                      0xFFD4C4E8
+                      x, y - 40, 0xFFD4C4E8
                   );
 
                   graphics.drawCenteredString(
                       this.font,
-                      "Proxy features are coming soon!",
-                      centerX, centerY,
-                      0xFFFFFFFF
+                      "Proxy features coming soon!",
+                      x, y, 0xFFFFFFFF
                   );
 
                   graphics.drawCenteredString(
                       this.font,
                       "Version 0.2.0 - GUI Preview",
-                      centerX, centerY + 25,
-                      0xFFBFA8D9
+                      x, y + 25, 0xFFBFA8D9
                   );
 
                   super.render(graphics, mouseX, mouseY, partialTick);
